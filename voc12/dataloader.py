@@ -1,36 +1,41 @@
+import os.path
 
+import imageio
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-import os.path
-import imageio
-from misc import imutils
+
+from cda.misc import imutils
 
 IMG_FOLDER_NAME = "JPEGImages"
 ANNOT_FOLDER_NAME = "Annotations"
 IGNORE = 255
 
 CAT_LIST = ['aeroplane', 'bicycle', 'bird', 'boat',
-        'bottle', 'bus', 'car', 'cat', 'chair',
-        'cow', 'diningtable', 'dog', 'horse',
-        'motorbike', 'person', 'pottedplant',
-        'sheep', 'sofa', 'train',
-        'tvmonitor']
+            'bottle', 'bus', 'car', 'cat', 'chair',
+            'cow', 'diningtable', 'dog', 'horse',
+            'motorbike', 'person', 'pottedplant',
+            'sheep', 'sofa', 'train',
+            'tvmonitor']
 
 N_CAT = len(CAT_LIST)
 
-CAT_NAME_TO_NUM = dict(zip(CAT_LIST,range(len(CAT_LIST))))
+CAT_NAME_TO_NUM = dict(zip(CAT_LIST, range(len(CAT_LIST))))
 
 cls_labels_dict = np.load('voc12/cls_labels.npy', allow_pickle=True).item()
+
 
 def decode_int_filename(int_filename):
     s = str(int(int_filename))
     return s[:4] + '_' + s[4:]
 
+
 def load_image_label_from_xml(img_name, voc12_root):
     from xml.dom import minidom
 
-    elem_list = minidom.parse(os.path.join(voc12_root, ANNOT_FOLDER_NAME, decode_int_filename(img_name) + '.xml')).getElementsByTagName('name')
+    elem_list = minidom.parse(
+        os.path.join(voc12_root, ANNOT_FOLDER_NAME, decode_int_filename(img_name) + '.xml')).getElementsByTagName(
+        'name')
 
     multi_cls_lab = np.zeros((N_CAT), np.float32)
 
@@ -42,21 +47,22 @@ def load_image_label_from_xml(img_name, voc12_root):
 
     return multi_cls_lab
 
-def load_image_label_list_from_xml(img_name_list, voc12_root):
 
+def load_image_label_list_from_xml(img_name_list, voc12_root):
     return [load_image_label_from_xml(img_name, voc12_root) for img_name in img_name_list]
 
-def load_image_label_list_from_npy(img_name_list):
 
+def load_image_label_list_from_npy(img_name_list):
     return np.array([cls_labels_dict[img_name] for img_name in img_name_list])
+
 
 def get_img_path(img_name, voc12_root):
     if not isinstance(img_name, str):
         img_name = decode_int_filename(img_name)
     return os.path.join(voc12_root, IMG_FOLDER_NAME, img_name + '.jpg')
 
-def load_img_name_list(dataset_path):
 
+def load_img_name_list(dataset_path):
     img_name_list = np.loadtxt(dataset_path, dtype=np.int32)
 
     return img_name_list
@@ -77,15 +83,14 @@ class TorchvisionNormalize():
 
         return proc_img
 
+
 class GetAffinityLabelFromIndices():
 
     def __init__(self, indices_from, indices_to):
-
         self.indices_from = indices_from
         self.indices_to = indices_to
 
     def __call__(self, segm_map):
-
         segm_map_flat = np.reshape(segm_map, -1)
 
         segm_label_from = np.expand_dims(segm_map_flat[self.indices_from], axis=0)
@@ -155,14 +160,15 @@ class VOC12ImageDataset(Dataset):
 
         return {'name': name_str, 'img': img}
 
+
 class VOC12ClassificationDataset(VOC12ImageDataset):
 
     def __init__(self, img_name_list_path, voc12_root,
                  resize_long=None, rescale=None, img_normal=TorchvisionNormalize(), hor_flip=False,
                  crop_size=None, crop_method=None):
         super().__init__(img_name_list_path, voc12_root,
-                 resize_long, rescale, img_normal, hor_flip,
-                 crop_size, crop_method)
+                         resize_long, rescale, img_normal, hor_flip,
+                         crop_size, crop_method)
         self.label_list = load_image_label_list_from_npy(self.img_name_list)
 
     def __getitem__(self, idx):
@@ -171,6 +177,7 @@ class VOC12ClassificationDataset(VOC12ImageDataset):
         out['label'] = torch.from_numpy(self.label_list[idx])
 
         return out
+
 
 class VOC12ClassificationDatasetMSF(VOC12ClassificationDataset):
 
@@ -206,11 +213,12 @@ class VOC12ClassificationDatasetMSF(VOC12ClassificationDataset):
         # print('ms_img_list[0].shape',ms_img_list[0].shape)4
         return out
 
+
 class VOC12SegmentationDataset(Dataset):
 
     def __init__(self, img_name_list_path, label_dir, crop_size, voc12_root,
                  rescale=None, img_normal=TorchvisionNormalize(), hor_flip=False,
-                 crop_method = 'random'):
+                 crop_method='random'):
 
         self.img_name_list = load_img_name_list(img_name_list_path)
         self.voc12_root = voc12_root
@@ -254,11 +262,13 @@ class VOC12SegmentationDataset(Dataset):
 
         return {'name': name, 'img': img, 'label': label}
 
+
 class VOC12AffinityDataset(VOC12SegmentationDataset):
     def __init__(self, img_name_list_path, label_dir, crop_size, voc12_root,
                  indices_from, indices_to,
                  rescale=None, img_normal=TorchvisionNormalize(), hor_flip=False, crop_method=None):
-        super().__init__(img_name_list_path, label_dir, crop_size, voc12_root, rescale, img_normal, hor_flip, crop_method=crop_method)
+        super().__init__(img_name_list_path, label_dir, crop_size, voc12_root, rescale, img_normal, hor_flip,
+                         crop_method=crop_method)
 
         self.extract_aff_lab_func = GetAffinityLabelFromIndices(indices_from, indices_to)
 
@@ -270,19 +280,21 @@ class VOC12AffinityDataset(VOC12SegmentationDataset):
 
         reduced_label = imutils.pil_rescale(out['label'], 0.25, 0)
 
-        out['aff_bg_pos_label'], out['aff_fg_pos_label'], out['aff_neg_label'] = self.extract_aff_lab_func(reduced_label)
+        out['aff_bg_pos_label'], out['aff_fg_pos_label'], out['aff_neg_label'] = self.extract_aff_lab_func(
+            reduced_label)
 
         return out
+
 
 ################修改代码################
 class VOC12ClassificationAugDataset(Dataset):
     def __init__(self, img_name_list_path, voc12_root,
                  resize_long=None, rescale=None, img_normal=TorchvisionNormalize(), hor_flip=False,
                  crop_size=None, crop_method=None, to_torch=True):
-        #得到的imagename格式为2008001576
+        # 得到的imagename格式为2008001576
         self.img_name_list = load_img_name_list(img_name_list_path)
         # self.seg_fg_dir=np.load('/home/sun/papers/aug_irn/irn/voc12/seg_fg_dirs.npy', allow_pickle=True).item()
-        self.seg_fg_dir=np.load('voc12/seg_fg_dirs.npy', allow_pickle=True).item()
+        self.seg_fg_dir = np.load('voc12/seg_fg_dirs.npy', allow_pickle=True).item()
         self.voc12_root = voc12_root
 
         self.resize_long = resize_long
@@ -294,33 +306,35 @@ class VOC12ClassificationAugDataset(Dataset):
         self.to_torch = to_torch
 
         self.label_list = load_image_label_list_from_npy(self.img_name_list)
+
     def __len__(self):
         return len(self.img_name_list)
+
     def __getitem__(self, idx):
         name = self.img_name_list[idx]
-        #得到磁盘存储img文件名
+        # 得到磁盘存储img文件名
         name_str = decode_int_filename(name)
         bg_img = np.asarray(imageio.imread(get_img_path(name_str, self.voc12_root)))
-        label_one_hot=self.label_list[idx]
-        
-        label_index=np.arange(len(label_one_hot))
-        label_index=label_index[label_one_hot==0]
-        fg_label=np.random.choice(label_index)
-        fg_name=np.random.choice(self.seg_fg_dir[fg_label])
+        label_one_hot = self.label_list[idx]
 
-        fg_pack=np.load(os.path.join('result/sem_seg_fg',str(fg_label),fg_name), allow_pickle=True).item()
-        fg_img=fg_pack['img']
-        fg_seg=fg_pack['seg']
+        label_index = np.arange(len(label_one_hot))
+        label_index = label_index[label_one_hot == 0]
+        fg_label = np.random.choice(label_index)
+        fg_name = np.random.choice(self.seg_fg_dir[fg_label])
 
-        aug_img=imutils.data_aug_rotation(bg_img,fg_img,fg_seg)
-        aug_label_one_hot=np.zeros(len(label_one_hot))
-        aug_label_one_hot[label_one_hot==1]=1
-        aug_label_one_hot[fg_label]=1
-        img=bg_img
+        fg_pack = np.load(os.path.join('result/sem_seg_fg', str(fg_label), fg_name), allow_pickle=True).item()
+        fg_img = fg_pack['img']
+        fg_seg = fg_pack['seg']
+
+        aug_img = imutils.data_aug_rotation(bg_img, fg_img, fg_seg)
+        aug_label_one_hot = np.zeros(len(label_one_hot))
+        aug_label_one_hot[label_one_hot == 1] = 1
+        aug_label_one_hot[fg_label] = 1
+        img = bg_img
 
         if self.resize_long:
             img = imutils.random_resize_long(img, self.resize_long[0], self.resize_long[1])
-            aug_img= imutils.random_resize_long(aug_img, self.resize_long[0], self.resize_long[1])
+            aug_img = imutils.random_resize_long(aug_img, self.resize_long[0], self.resize_long[1])
         if self.rescale:
             img = imutils.random_scale(img, scale_range=self.rescale, order=3)
             aug_img = imutils.random_scale(aug_img, scale_range=self.rescale, order=3)
@@ -343,6 +357,6 @@ class VOC12ClassificationAugDataset(Dataset):
         if self.to_torch:
             img = imutils.HWC_to_CHW(img)
             aug_img = imutils.HWC_to_CHW(aug_img)
-        return {'name': name_str, 'img': img, 'label':label_one_hot,
-                                  'aug_img':aug_img,'aug_label':aug_label_one_hot}
+        return {'name': name_str, 'img': img, 'label': label_one_hot,
+                'aug_img': aug_img, 'aug_label': aug_label_one_hot}
 ################修改代码################

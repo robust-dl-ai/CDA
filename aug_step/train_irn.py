@@ -1,29 +1,30 @@
-
 import torch
 from torch.backends import cudnn
+
+from cda.voc12 import dataloader
+
 cudnn.enabled = True
 from torch.utils.data import DataLoader
-import voc12.dataloader
-from misc import pyutils, torchutils, indexing
+from cda.misc import pyutils, torchutils, indexing
 import importlib
 
-def run(args):
 
+def run(args):
     path_index = indexing.PathIndex(radius=10, default_size=(args.irn_crop_size // 4, args.irn_crop_size // 4))
 
     model = getattr(importlib.import_module(args.irn_network), 'AffinityDisplacementLoss')(
         path_index)
     ###################修改代码#########################
-    train_dataset = voc12.dataloader.VOC12AffinityDataset(args.train_list,
-                                                          label_dir=args.ir_label_out_aug_dir,
-                                                          voc12_root=args.voc12_root,
-                                                          indices_from=path_index.src_indices,
-                                                          indices_to=path_index.dst_indices,
-                                                          hor_flip=True,
-                                                          crop_size=args.irn_crop_size,
-                                                          crop_method="random",
-                                                          rescale=(0.5, 1.5)
-                                                          )
+    train_dataset = dataloader.VOC12AffinityDataset(args.train_list,
+                                                    label_dir=args.ir_label_out_aug_dir,
+                                                    voc12_root=args.voc12_root,
+                                                    indices_from=path_index.src_indices,
+                                                    indices_to=path_index.dst_indices,
+                                                    hor_flip=True,
+                                                    crop_size=args.irn_crop_size,
+                                                    crop_method="random",
+                                                    rescale=(0.5, 1.5)
+                                                    )
     ###################修改代码#########################
     train_data_loader = DataLoader(train_dataset, batch_size=args.irn_batch_size,
                                    shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True)
@@ -32,8 +33,8 @@ def run(args):
 
     param_groups = model.trainable_parameters()
     optimizer = torchutils.PolyOptimizer([
-        {'params': param_groups[0], 'lr': 1*args.irn_learning_rate, 'weight_decay': args.irn_weight_decay},
-        {'params': param_groups[1], 'lr': 10*args.irn_learning_rate, 'weight_decay': args.irn_weight_decay}
+        {'params': param_groups[0], 'lr': 1 * args.irn_learning_rate, 'weight_decay': args.irn_weight_decay},
+        {'params': param_groups[1], 'lr': 10 * args.irn_learning_rate, 'weight_decay': args.irn_weight_decay}
     ], lr=args.irn_learning_rate, weight_decay=args.irn_weight_decay, max_step=max_step)
 
     model = torch.nn.DataParallel(model).cuda()
@@ -45,7 +46,7 @@ def run(args):
 
     for ep in range(args.irn_num_epoches):
 
-        print('Epoch %d/%d' % (ep+1, args.irn_num_epoches))
+        print('Epoch %d/%d' % (ep + 1, args.irn_num_epoches))
 
         for iter, pack in enumerate(train_data_loader):
 
@@ -78,17 +79,18 @@ def run(args):
 
                 print('step:%5d/%5d' % (optimizer.global_step - 1, max_step),
                       'loss:%.4f %.4f %.4f %.4f' % (
-                      avg_meter.pop('loss1'), avg_meter.pop('loss2'), avg_meter.pop('loss3'), avg_meter.pop('loss4')),
+                          avg_meter.pop('loss1'), avg_meter.pop('loss2'), avg_meter.pop('loss3'),
+                          avg_meter.pop('loss4')),
                       'imps:%.1f' % ((iter + 1) * args.irn_batch_size / timer.get_stage_elapsed()),
                       'lr: %.4f' % (optimizer.param_groups[0]['lr']),
                       'etc:%s' % (timer.str_estimated_complete()), flush=True)
         else:
             timer.reset_stage()
 
-    infer_dataset = voc12.dataloader.VOC12ImageDataset(args.infer_list,
-                                                       voc12_root=args.voc12_root,
-                                                       crop_size=args.irn_crop_size,
-                                                       crop_method="top_left")
+    infer_dataset = dataloader.VOC12ImageDataset(args.infer_list,
+                                                 voc12_root=args.voc12_root,
+                                                 crop_size=args.irn_crop_size,
+                                                 crop_method="top_left")
     infer_data_loader = DataLoader(infer_dataset, batch_size=args.irn_batch_size,
                                    shuffle=False, num_workers=args.num_workers, pin_memory=True, drop_last=True)
 
@@ -107,8 +109,8 @@ def run(args):
 
         model.module.mean_shift.running_mean = torch.mean(torch.stack(dp_mean_list), dim=0)
     print('done.')
-    
-        ###################修改代码#########################
+
+    ###################修改代码#########################
     torch.save(model.module.state_dict(), args.irn_weights_aug_name)
-        ###################修改代码#########################
+    ###################修改代码#########################
     torch.cuda.empty_cache()

@@ -1,16 +1,16 @@
-import torch
-from torch import multiprocessing, cuda
-from torch.utils.data import DataLoader
-import torch.nn.functional as F
-from torch.backends import cudnn
-
-import numpy as np
 import importlib
 import os
 
+import numpy as np
 import skimage
-import voc12.dataloader
-from misc import torchutils, imutils, pyutils, indexing
+import torch
+import torch.nn.functional as F
+from torch import multiprocessing, cuda
+from torch.backends import cudnn
+from torch.utils.data import DataLoader
+
+from cda.misc import torchutils, imutils, pyutils, indexing
+from cda.voc12 import dataloader
 
 cudnn.enabled = True
 
@@ -25,7 +25,6 @@ def find_centroids_with_refinement(displacement, iterations=300):
     centroid_x = np.repeat(np.expand_dims(np.arange(width), 0), height, axis=0).astype(np.float32)
 
     for i in range(iterations):
-
         # 2. find numbers after the decimals
         uy = np.ceil(centroid_y).astype(np.int32)
         dy = np.floor(centroid_y).astype(np.int32)
@@ -37,23 +36,24 @@ def find_centroids_with_refinement(displacement, iterations=300):
 
         # 3. move centroids
         centroid_y += displacement[0][uy, ux] * y_c * x_c + \
-                      displacement[0][dy, ux] *(1 - y_c) * x_c + \
+                      displacement[0][dy, ux] * (1 - y_c) * x_c + \
                       displacement[0][uy, dx] * y_c * (1 - x_c) + \
                       displacement[0][dy, dx] * (1 - y_c) * (1 - x_c)
 
         centroid_x += displacement[1][uy, ux] * y_c * x_c + \
-                      displacement[1][dy, ux] *(1 - y_c) * x_c + \
+                      displacement[1][dy, ux] * (1 - y_c) * x_c + \
                       displacement[1][uy, dx] * y_c * (1 - x_c) + \
                       displacement[1][dy, dx] * (1 - y_c) * (1 - x_c)
 
         # 4. bound centroids
-        centroid_y = np.clip(centroid_y, 0, height-1)
-        centroid_x = np.clip(centroid_x, 0, width-1)
+        centroid_y = np.clip(centroid_y, 0, height - 1)
+        centroid_x = np.clip(centroid_x, 0, width - 1)
 
     centroid_y = np.round(centroid_y).astype(np.int32)
     centroid_x = np.round(centroid_x).astype(np.int32)
 
     return np.stack([centroid_y, centroid_x], axis=0)
+
 
 def cluster_centroids(centroids, displacement, thres=2.5):
     # thres: threshold for grouping centroid (see supp)
@@ -66,7 +66,7 @@ def cluster_centroids(centroids, displacement, thres=2.5):
     dp_label = skimage.measure.label(weak_dp_region, connectivity=1, background=0)
     dp_label_1d = dp_label.reshape(-1)
 
-    centroids_1d = centroids[0]*width + centroids[1]
+    centroids_1d = centroids[0] * width + centroids[1]
 
     clusters_1d = dp_label_1d[centroids_1d]
 
@@ -74,10 +74,12 @@ def cluster_centroids(centroids, displacement, thres=2.5):
 
     return pyutils.to_one_hot(cluster_map)
 
+
 def separte_score_by_mask(scores, masks):
     instacne_map_expanded = torch.from_numpy(np.expand_dims(masks, 0).astype(np.float32))
     instance_score = torch.unsqueeze(scores, 1) * instacne_map_expanded.cuda()
     return instance_score
+
 
 def detect_instance(score_map, mask, class_id, max_fragment_size=0):
     # converting pixel-wise instance ids into detection form
@@ -101,12 +103,11 @@ def detect_instance(score_map, mask, class_id, max_fragment_size=0):
             pred_mask.append(seg_mask)
 
     return {'score': np.stack(pred_score, 0),
-           'mask': np.stack(pred_mask, 0),
-           'class': np.stack(pred_label, 0)}
+            'mask': np.stack(pred_mask, 0),
+            'class': np.stack(pred_label, 0)}
 
 
 def _work(process_id, model, dataset, args):
-
     n_gpus = torch.cuda.device_count()
     databin = dataset[process_id]
     data_loader = DataLoader(databin, shuffle=False, num_workers=args.num_workers // n_gpus, pin_memory=False)
@@ -143,7 +144,7 @@ def _work(process_id, model, dataset, args):
             num_instances = instance_map.shape[0]
 
             instance_shape = torch.argmax(rw_up_bg, 0).cpu().numpy()
-            instance_shape = pyutils.to_one_hot(instance_shape, maximum_val=num_instances*num_classes+1)[1:]
+            instance_shape = pyutils.to_one_hot(instance_shape, maximum_val=num_instances * num_classes + 1)[1:]
             instance_class_id = np.repeat(keys, num_instances)
 
             detected = detect_instance(rw_up.cpu().numpy(), instance_shape, instance_class_id,
@@ -152,7 +153,7 @@ def _work(process_id, model, dataset, args):
             np.save(os.path.join(args.ins_seg_out_dir, img_name + '.npy'), detected)
 
             if process_id == n_gpus - 1 and iter % (len(databin) // 20) == 0:
-                print("%d " % ((5*iter+1)//(len(databin) // 20)), end='')
+                print("%d " % ((5 * iter + 1) // (len(databin) // 20)), end='')
 
 
 def run(args):
@@ -162,9 +163,9 @@ def run(args):
 
     n_gpus = torch.cuda.device_count()
 
-    dataset = voc12.dataloader.VOC12ClassificationDatasetMSF(args.infer_list,
-                                                             voc12_root=args.voc12_root,
-                                                             scales=(1.0,))
+    dataset = dataloader.VOC12ClassificationDatasetMSF(args.infer_list,
+                                                       voc12_root=args.voc12_root,
+                                                       scales=(1.0,))
     dataset = torchutils.split_dataset(dataset, n_gpus)
 
     print("[ ", end='')
